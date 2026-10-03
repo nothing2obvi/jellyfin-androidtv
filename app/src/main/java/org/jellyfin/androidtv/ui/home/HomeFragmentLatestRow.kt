@@ -5,11 +5,14 @@ import androidx.leanback.widget.Row
 import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.androidtv.constant.ChangeTriggerType
+import org.jellyfin.androidtv.constant.ImageType
 import org.jellyfin.androidtv.data.repository.ItemRepository
 import org.jellyfin.androidtv.ui.browsing.BrowseRowDef
 import org.jellyfin.androidtv.ui.presentation.CardPresenter
 import org.jellyfin.androidtv.ui.presentation.MutableObjectAdapter
+import org.jellyfin.androidtv.util.sdk.isMusicVideo
 import org.jellyfin.sdk.model.api.BaseItemDto
+import org.jellyfin.sdk.model.api.BaseItemKind
 import org.jellyfin.sdk.model.api.CollectionType
 import org.jellyfin.sdk.model.api.request.GetLatestMediaRequest
 
@@ -36,7 +39,30 @@ class HomeFragmentLatestRow(
 				)
 
 				val title = context.getString(R.string.lbl_latest_in, item.name)
-				HomeFragmentBrowseRowDefRow(BrowseRowDef(title, request, arrayOf(ChangeTriggerType.LibraryUpdated)))
+				val presenter = if (item.collectionType.isMusicVideo()) {
+					CardPresenter(
+						showInfo = cardPresenter.showInfo,
+						imageType = ImageType.THUMB,
+						staticHeight = cardPresenter.staticHeight,
+						uniformAspect = cardPresenter.uniformAspect,
+						cardTitle = { rowItem, cardContext ->
+							val media = rowItem.baseItem
+							val songTitle = rowItem.getCardName(cardContext)
+							val artists = media?.artists.orEmpty().filter { it.isNotBlank() }.joinToString(", ")
+							if (media?.type == BaseItemKind.MUSIC_VIDEO && artists.isNotEmpty() && !songTitle.isNullOrBlank()) {
+								"$artists - $songTitle"
+							} else {
+								songTitle
+							}
+						},
+					)
+				} else {
+					null
+				}
+				HomeFragmentBrowseRowDefRow(
+					BrowseRowDef(title, request, arrayOf(ChangeTriggerType.LibraryUpdated)),
+					presenter,
+				)
 			}.forEach { row ->
 				// Add row to adapter
 				row.addToRowsAdapter(context, cardPresenter, rowsAdapter)

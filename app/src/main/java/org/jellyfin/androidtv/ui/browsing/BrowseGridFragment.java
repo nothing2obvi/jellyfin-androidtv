@@ -58,6 +58,7 @@ import org.jellyfin.androidtv.util.InfoLayoutHelper;
 import org.jellyfin.androidtv.util.KeyProcessor;
 import org.jellyfin.androidtv.util.Utils;
 import org.jellyfin.androidtv.util.apiclient.EmptyResponse;
+import org.jellyfin.androidtv.util.sdk.CollectionTypeExtensionsKt;
 import org.jellyfin.sdk.api.client.ApiClient;
 import org.jellyfin.sdk.model.api.BaseItemDto;
 import org.jellyfin.sdk.model.api.BaseItemKind;
@@ -98,6 +99,8 @@ public class BrowseGridFragment extends Fragment implements View.OnKeyListener {
     private UUID mParentId;
     private BaseItemDto mFolder;
     private LibraryPreferences libraryPreferences;
+    private String displayPreferencesId;
+    private boolean isMusicVideoArtistView;
 
     private HorizontalGridBrowseBinding binding;
     private ItemRowAdapter mAdapter;
@@ -145,9 +148,14 @@ public class BrowseGridFragment extends Fragment implements View.OnKeyListener {
         mFolder = Json.Default.decodeFromString(BaseItemDto.Companion.serializer(), getArguments().getString(Extras.Folder));
         mParentId = mFolder.getId();
         mainTitle = mFolder.getName();
-        libraryPreferences = preferencesRepository.getValue().getLibraryPreferences(Objects.requireNonNull(mFolder.getDisplayPreferencesId()));
+        isMusicVideoArtistView = CollectionTypeExtensionsKt.isMusicVideo(mFolder.getCollectionType())
+                || LibraryPreferences.MUSIC_VIDEO_ARTIST_DISPLAY_PREFERENCES_ID.equals(mFolder.getDisplayPreferencesId());
+        displayPreferencesId = isMusicVideoArtistView
+                ? LibraryPreferences.MUSIC_VIDEO_ARTIST_DISPLAY_PREFERENCES_ID
+                : Objects.requireNonNull(mFolder.getDisplayPreferencesId());
+        libraryPreferences = preferencesRepository.getValue().getLibraryPreferences(displayPreferencesId);
         mPosterSizeSetting = libraryPreferences.get(LibraryPreferences.Companion.getPosterSize());
-        mImageType = libraryPreferences.get(LibraryPreferences.Companion.getImageType());
+        mImageType = libraryPreferences.get(libraryPreferences.getImageType());
         mGridDirection = libraryPreferences.get(LibraryPreferences.Companion.getGridDirection());
         mCardFocusScale = getResources().getFraction(R.fraction.card_scale_focus, 1, 1);
 
@@ -571,7 +579,7 @@ public class BrowseGridFragment extends Fragment implements View.OnKeyListener {
         super.onResume();
 
         PosterSize posterSizeSetting = libraryPreferences.get(LibraryPreferences.Companion.getPosterSize());
-        ImageType imageType = libraryPreferences.get(LibraryPreferences.Companion.getImageType());
+        ImageType imageType = libraryPreferences.get(libraryPreferences.getImageType());
         GridDirection gridDirection = libraryPreferences.get(LibraryPreferences.Companion.getGridDirection());
 
         if (mImageType != imageType || mPosterSizeSetting != posterSizeSetting || mGridDirection != gridDirection || mDirty) {
@@ -613,7 +621,13 @@ public class BrowseGridFragment extends Fragment implements View.OnKeyListener {
     }
 
     private void buildAdapter() {
-        mCardPresenter = new CardPresenter(false, mImageType, mCardHeight, true);
+        // Artist listings can contain MusicArtist items or ordinary artist folders.
+        mCardPresenter = new CardPresenter(
+                isMusicVideoArtistView, mImageType, mCardHeight, !isMusicVideoArtistView,
+                item -> !isMusicVideoArtistView || item.getBaseItem() == null
+                        || (item.getBaseItem().getType() != BaseItemKind.MUSIC_ARTIST
+                        && item.getBaseItem().getType() != BaseItemKind.FOLDER)
+        );
 
         Timber.d("buildAdapter cardHeight <%s> getCardWidthBy <%s> chunks <%s> type <%s>", mCardHeight, (int) getCardWidthBy(mCardHeight, mImageType, mFolder), mRowDef.getChunkSize(), mRowDef.getQueryType().toString());
 
@@ -811,7 +825,7 @@ public class BrowseGridFragment extends Fragment implements View.OnKeyListener {
         mLetterButton.setContentDescription(getString(R.string.lbl_by_letter));
         binding.toolBar.addView(mLetterButton);
 
-        if (mFolder.getDisplayPreferencesId() != null) {
+        if (displayPreferencesId != null) {
             MutableStateFlow<Boolean> settingsVisible = BrowseGridFragmentHelperKt.createSettingsVisibility(BrowseGridFragment.this);
             mSettingsButton = new ImageButton(requireContext(), null, 0, R.style.Button_Icon);
             mSettingsButton.setImageResource(R.drawable.ic_settings);
@@ -825,7 +839,7 @@ public class BrowseGridFragment extends Fragment implements View.OnKeyListener {
             });
             mSettingsButton.setContentDescription(getString(R.string.lbl_settings));
             binding.toolBar.addView(mSettingsButton);
-            BrowseGridFragmentHelperKt.addSettings(BrowseGridFragment.this, binding.settings, mFolder.getId(), mFolder.getDisplayPreferencesId(), settingsVisible);
+            BrowseGridFragmentHelperKt.addSettings(BrowseGridFragment.this, binding.settings, mFolder.getId(), displayPreferencesId, settingsVisible);
         }
     }
 
@@ -906,7 +920,12 @@ public class BrowseGridFragment extends Fragment implements View.OnKeyListener {
                                   RowPresenter.ViewHolder rowViewHolder, Row row) {
 
             if (!(item instanceof BaseRowItem)) return;
-            itemLauncher.getValue().launch((BaseRowItem) item, mAdapter, requireContext());
+            itemLauncher.getValue().launch(
+                    (BaseRowItem) item,
+                    mAdapter,
+                    requireContext(),
+                    isMusicVideoArtistView ? LibraryPreferences.MUSIC_VIDEO_ARTIST_DISPLAY_PREFERENCES_ID : null
+            );
         }
     }
 

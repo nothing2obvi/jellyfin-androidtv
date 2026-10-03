@@ -1,5 +1,6 @@
 package org.jellyfin.androidtv.ui.presentation
 
+import android.content.Context
 import android.view.KeyEvent
 import android.view.ViewGroup
 import android.widget.ImageView
@@ -54,12 +55,15 @@ import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.model.api.BaseItemKind
 import org.koin.compose.koinInject
 
-class CardPresenter(
+class CardPresenter @JvmOverloads constructor(
 	val showInfo: Boolean,
 	val imageType: ImageType,
 	val staticHeight: Int,
 	val uniformAspect: Boolean,
+	private val showLabels: (BaseRowItem) -> Boolean = { true },
+	private val cardTitle: (BaseRowItem, Context) -> String? = { item, context -> item.getCardName(context) },
 ) : Presenter() {
+	constructor(imageType: ImageType) : this(true, imageType, 150)
 	constructor(showInfo: Boolean, imageType: ImageType, staticHeight: Int) : this(showInfo, imageType, staticHeight, false)
 	constructor(showInfo: Boolean, staticHeight: Int) : this(showInfo, ImageType.POSTER, staticHeight)
 	constructor(showInfo: Boolean) : this(showInfo, 150)
@@ -110,6 +114,8 @@ class CardPresenter(
 					imageType = imageType,
 					staticHeight = staticHeight,
 					uniformAspect = uniformAspect,
+					showLabels = showLabels,
+					cardTitle = cardTitle,
 				)
 			}
 
@@ -285,11 +291,13 @@ private fun CardViewHolderContent(
 	imageType: ImageType,
 	staticHeight: Int,
 	uniformAspect: Boolean,
+	showLabels: (BaseRowItem) -> Boolean,
+	cardTitle: (BaseRowItem, Context) -> String?,
 ) {
 	val context = LocalContext.current
 	val localDensity = LocalDensity.current
 
-	val title = remember(item, context) { item?.getCardName(context) }
+	val title = remember(item, context, cardTitle) { item?.let { cardTitle(it, context) } }
 	val subtitle = remember(item, context) { item?.getSubText(context) }
 	val displayConfig = remember(item, imageType, uniformAspect) { item?.getDisplayConfig(imageType, uniformAspect) }
 	if (item == null || displayConfig == null) return
@@ -304,7 +312,8 @@ private fun CardViewHolderContent(
 		else -> DpSize(150.dp * aspectRatio, 150.dp)
 	}
 
-	val usePreview = displayConfig.overrideShowInfo ?: showInfo
+	val labelsVisible = showLabels(item)
+	val usePreview = labelsVisible && (displayConfig.overrideShowInfo ?: showInfo)
 
 	val card = @Composable {
 		ItemCard(
@@ -341,7 +350,7 @@ private fun CardViewHolderContent(
 				}
 			},
 			overlay = {
-				val showInfo = !usePreview && item.showCardInfoOverlay
+				val showInfo = labelsVisible && !usePreview && item.showCardInfoOverlay
 				item.baseItem?.let { baseItem ->
 					ItemCardBaseItemOverlay(
 						item = baseItem,
